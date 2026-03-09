@@ -1,0 +1,132 @@
+# System Data Analyser
+
+A lightweight macOS tool that scans the directories contributing to the **System Data** category in *System Settings → General → Storage* and produces a clean, interactive HTML report — no installs, no dependencies beyond Python 3.
+
+![macOS](https://img.shields.io/badge/macOS-Sequoia%2015%2B-blue) ![Python](https://img.shields.io/badge/Python-3.8%2B-brightgreen) ![Architecture](https://img.shields.io/badge/Architecture-Apple%20Silicon-orange) ![Licence](https://img.shields.io/badge/Licence-MIT-lightgrey)
+
+---
+
+## What it does
+
+macOS bundles a wide range of files into a catch-all *System Data* bucket that gives no insight into what is actually consuming the space. System Data Analyser breaks that bucket open by scanning 15 categories of directories and presenting the results in a clear, drillable report saved to your Downloads folder.
+
+The report opens automatically in your default browser. Categories are shown with their total size and a proportional bar chart. Clicking any row expands it to reveal the subdirectories and files inside, each with its individual size. A **Copy Path** button on hover lets you jump straight to any folder in Finder via *Go → Go to Folder…* (⌘⇧G).
+
+### Categories scanned
+
+| Icon | Category | Description |
+|------|----------|-------------|
+| ⚡ | Application Caches | Temporary files apps create to speed up loading |
+| 📦 | Application Support | Data and resources stored by installed apps |
+| 🗂 | App Containers & Groups | Sandboxed storage areas for apps |
+| 📋 | Log Files | System and application activity logs |
+| ⚙️ | App Preferences | Configuration files for your apps |
+| 🔨 | Xcode Build Data | Intermediate build files and archives |
+| 📱 | iOS & watchOS Simulators | Simulator runtimes for device testing |
+| 🔌 | Device Support Files | Files downloaded when connecting Apple devices to Xcode |
+| 🍺 | Homebrew Packages | Command-line tools installed via Homebrew |
+| 🗑 | Temporary System Files | Short-lived files created during normal use |
+| 🔤 | Fonts | System and user-installed font files |
+| 🔧 | Plug-ins & Extensions | Browser plug-ins, Quick Look extensions, and add-ons |
+| ☁️ | iCloud Drive (Local Copy) | iCloud files currently downloaded to this Mac |
+| 🛠 | Developer Frameworks & SDKs | Additional developer frameworks installed system-wide |
+| 📧 | Mail Downloads | Attachments and previews downloaded by Mail |
+
+### Error visibility
+
+Directories that cannot be read are shown inline in the report — highlighted in amber with a ⚠️ icon and the specific reason (e.g. *Permission denied*). Categories with unreadable items display an `⚠️ N unreadable` badge on their header row. Granting Full Disk Access to Terminal in *System Settings → Privacy & Security → Full Disk Access* resolves most permission errors.
+
+---
+
+## What it does NOT do
+
+**System Data Analyser is intentionally read-only.** It scans and reports — it does not move, modify, or delete any files. This is a deliberate design decision: safe deletion requires understanding context (some caches are actively in use, some simulator runtimes are still needed), and that judgement should remain with the user. Deletion capability may be added in a future version with appropriate safeguards.
+
+---
+
+## Requirements
+
+| Requirement | Detail |
+|-------------|--------|
+| **macOS** | Sequoia 15 or later |
+| **Architecture** | Apple Silicon (M-series) |
+| **Python** | 3.8 or later — Homebrew Python recommended (`brew install python3`) |
+
+> **Important:** The Python.org installer bundles an outdated Tcl/Tk framework that crashes at startup on macOS Sequoia before any code runs. Use Homebrew Python to avoid this. The launcher script (`launch_analyser.command`) detects and prefers Homebrew Python automatically.
+
+### Optional: Full Disk Access
+
+Without Full Disk Access, some system-owned directories (e.g. `/private/var/folders`) cannot be read. The tool works without it but shows ⚠️ errors for those locations. To grant access:
+
+*System Settings → Privacy & Security → Full Disk Access → enable Terminal*
+
+---
+
+## Installation
+
+No installation is required. Download or clone the repository and double-click `launch_analyser.command` in Finder, or run it from the terminal:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/system-data-analyser.git
+cd system-data-analyser
+./launch_analyser.command
+```
+
+On first run, macOS may ask you to confirm you want to open the script. Click **Open**.
+
+---
+
+## Files
+
+```
+system-data-analyser/
+├── system_data_analyser.py   # Main scanner and HTML report generator
+├── launch_analyser.command   # Launcher — finds a compatible Python and runs the app
+└── README.md
+```
+
+---
+
+## How it works
+
+### Python launcher (`launch_analyser.command`)
+
+The launcher is a bash script that searches for a working Python 3 installation in order of preference:
+
+1. `/opt/homebrew/bin/python3` (Homebrew — recommended)
+2. Versioned Homebrew paths (`python@3.13`, `3.12`, `3.11`)
+3. `/usr/local/bin/python3`
+4. Whatever `which python3` resolves to (excluding `/usr/bin/python3`, which is a macOS stub)
+
+The macOS stub at `/usr/bin/python3` is explicitly excluded: it passes superficial existence tests but fails when invoked directly and has an incompatible Tcl/Tk framework linked to it. If no working Python is found, the launcher offers to install one via Homebrew.
+
+### Scanner (`system_data_analyser.py`)
+
+The scanner uses `du -sk` (disk usage in 1 KB blocks) via batched subprocess calls — grouping all children of a directory into a single `du` invocation — for speed. It operates in two levels:
+
+- **Level 1**: sizes for the immediate children of each category root
+- **Level 2**: sizes for children of any Level 1 directory larger than 50 MB
+
+Errors from `du` are captured from stderr and attached to the relevant items. `PermissionError` and `OSError` exceptions from `Path.iterdir()` are also caught and surfaced as inline error items rather than silently swallowed.
+
+### Report
+
+The scanner produces a self-contained HTML file with all data embedded as JSON. A small vanilla JavaScript renderer builds the interactive tree in the browser — no frameworks, no network requests, no dependencies. The report is saved to `~/Downloads/system_data_YYYY-MM-DD_HH-MM-SS.html` and opened automatically.
+
+---
+
+## Development
+
+This tool was developed collaboratively with [Claude](https://claude.ai) (Anthropic) using Cowork mode — an agentic desktop assistant that can write, run, and iterate on code directly. The development process involved:
+
+- **Research**: Claude explored macOS System Data directories, identifying which paths contribute to the storage category and which require elevated permissions
+- **Iterative debugging**: Several compatibility issues were diagnosed and fixed in session, including Python type hint syntax for older Python versions, Tcl/Tk framework crashes on macOS Sequoia caused by the Python.org installer, and macOS stub behaviour at `/usr/bin/python3`
+- **Feature additions**: Error reporting, timestamped output to Downloads, and the interactive HTML report format were all developed through natural language conversation with Claude
+
+The entire codebase — Python scanner, bash launcher, and HTML/CSS/JS report generator — was written by Claude based on requirements specified in conversation.
+
+---
+
+## Licence
+
+MIT — see [LICENSE](LICENSE) for details.
