@@ -64,15 +64,42 @@ Without Full Disk Access, some system-owned directories (e.g. `/private/var/fold
 
 ## Installation
 
-No installation is required. Download or clone the repository and double-click `launch_analyser.command` in Finder, or run it from the terminal:
+No installation is required. Clone the repository and run the launcher:
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/system-data-analyser.git
 cd system-data-analyser
-./launch_analyser.command
 ```
 
-On first run, macOS may ask you to confirm you want to open the script. Click **Open**.
+### Make the launcher executable
+
+Git preserves file permissions, so the launcher should already be executable after cloning. You can confirm this with:
+
+```bash
+git ls-files --stage launch_analyser.command
+```
+
+The mode at the start of the output should read `100755`. If it shows `100644` instead, set the executable bit manually:
+
+```bash
+chmod +x launch_analyser.command
+```
+
+### macOS Gatekeeper
+
+macOS quarantines files downloaded from the internet, including files cloned from GitHub. The first time you run the launcher you may see *"cannot be opened because it is from an unidentified developer"*. To clear the quarantine flag:
+
+```bash
+xattr -d com.apple.quarantine launch_analyser.command
+```
+
+Or right-click the file in Finder and choose **Open**, then confirm in the dialog that appears.
+
+### Run
+
+```bash
+./launch_analyser.command
+```
 
 ---
 
