@@ -14,23 +14,26 @@ The report opens automatically in your default browser. Categories are shown wit
 
 ### Categories scanned
 
-| Icon | Category                    | Description                                             |
-| ---- | --------------------------- | ------------------------------------------------------- |
-| ⚡   | Application Caches          | Temporary files apps create to speed up loading         |
-| 📦   | Application Support         | Data and resources stored by installed apps             |
-| 🗂   | App Containers & Groups     | Sandboxed storage areas for apps                        |
-| 📋   | Log Files                   | System and application activity logs                    |
-| ⚙️   | App Preferences             | Configuration files for your apps                       |
-| 🔨   | Xcode Build Data            | Intermediate build files and archives                   |
-| 📱   | iOS & watchOS Simulators    | Simulator runtimes for device testing                   |
-| 🔌   | Device Support Files        | Files downloaded when connecting Apple devices to Xcode |
-| 🍺   | Homebrew Packages           | Command-line tools installed via Homebrew               |
-| 🗑   | Temporary System Files      | Short-lived files created during normal use             |
-| 🔤   | Fonts                       | System and user-installed font files                    |
-| 🔧   | Plug-ins & Extensions       | Browser plug-ins, Quick Look extensions, and add-ons    |
-| ☁️   | iCloud Drive (Local Copy)   | iCloud files currently downloaded to this Mac           |
-| 🛠   | Developer Frameworks & SDKs | Additional developer frameworks installed system-wide   |
-| 📧   | Mail Downloads              | Attachments and previews downloaded by Mail             |
+| Icon | Category                    | Description                                                        |
+| ---- | --------------------------- | ------------------------------------------------------------------ |
+| ⚡   | Application Caches          | Temporary files apps create to speed up loading                    |
+| 📦   | Application Support         | Data and resources stored by installed apps                        |
+| 🗂   | App Containers & Groups     | Sandboxed storage areas for apps                                   |
+| 📋   | Log Files                   | System and application activity logs                               |
+| ⚙️   | App Preferences             | Configuration files for your apps                                  |
+| 🔨   | Xcode Build Data            | Intermediate build files and archives                              |
+| 📱   | iOS & watchOS Simulators    | Simulator runtimes for device testing                              |
+| 🔌   | Device Support Files        | Files downloaded when connecting Apple devices to Xcode            |
+| 🍺   | Homebrew Packages           | Command-line tools installed via Homebrew                          |
+| 🗑   | Temporary System Files      | Short-lived files created during normal use                        |
+| 🔤   | Fonts                       | System and user-installed font files                               |
+| 🔧   | Plug-ins & Extensions       | Browser plug-ins, Quick Look extensions, and add-ons               |
+| ☁️   | iCloud Drive (Local Copy)   | iCloud files currently downloaded to this Mac                      |
+| 🛠   | Developer Frameworks & SDKs | Additional developer frameworks installed system-wide              |
+| 📧   | Mail Downloads              | Attachments and previews downloaded by Mail                        |
+| 🗄   | System Databases            | Diagnostics, analytics, and system logs in `/private/var/db/`      |
+| 🔩   | Developer Tool Caches       | npm, pip, Go, Rust/Cargo, Maven, Gradle, and Docker caches         |
+| 🔍   | Large Files (Spotlight)     | Files over 100 MB outside Library, found via Spotlight             |
 
 ### Error visibility
 

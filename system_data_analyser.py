@@ -237,6 +237,24 @@ CATEGORIES = [
             Path("/private/var/db/powerlog"),
         ],
     },
+    {
+        "id":          "dev_tool_caches",
+        "name":        "Developer Tool Caches",
+        "icon":        "🔩",
+        "desc":        "Build caches and package registries for developer tools — npm, pip, Go, Rust/Cargo, Maven, Gradle, and Docker. Safe to clear; tools will rebuild on next use.",
+        "safe":        True,
+        "skip_level2": False,
+        "paths": [
+            HOME / ".npm",                           # npm cache
+            HOME / ".cache",                         # XDG cache dir — pip, go-build, etc.
+            HOME / ".cargo" / "registry" / "cache",  # Rust crate source archives
+            HOME / ".cargo" / "git" / "db",          # Rust git-sourced dependencies
+            HOME / ".m2"  / "repository",            # Maven local repository
+            HOME / ".gradle" / "caches",             # Gradle build cache
+            HOME / ".docker",                        # Docker images, volumes, buildx cache
+            HOME / ".local" / "share",               # XDG data dir (many Linux-origin tools)
+        ],
+    },
 ]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1303,6 +1321,93 @@ function renderCategory(cat) {{
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+# ── Spotlight large-file scanner ──────────────────────────────────────────────
+
+# Paths already covered by the main category scanner — excluded from the
+# Spotlight scan to avoid counting the same bytes twice.
+_SPOTLIGHT_EXCLUDE: tuple[Path, ...] = (
+    HOME / "Library",
+    HOME / ".npm",
+    HOME / ".cache",
+    HOME / ".cargo",
+    HOME / ".m2",
+    HOME / ".gradle",
+    HOME / ".docker",
+    HOME / ".local",
+)
+
+def scan_large_files_spotlight(min_bytes: int = 100 * 1024 * 1024) -> dict:
+    """
+    Use Spotlight (mdfind) to find files >= min_bytes in the user's home
+    directory that are NOT already covered by the main category scanner.
+    This surfaces large orphaned files — disk images, archives, old backups,
+    media files — that would otherwise be invisible to a directory-tree scan.
+    """
+    children: list[dict] = []
+    total_size = 0
+
+    try:
+        r = subprocess.run(
+            [
+                "mdfind",
+                "-onlyin", str(HOME),
+                f"kMDItemFSSize >= {min_bytes}",
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        seen: set[str] = set()
+        for line in r.stdout.splitlines():
+            p_str = line.strip()
+            if not p_str or p_str in seen:
+                continue
+            seen.add(p_str)
+            p = Path(p_str)
+            # Skip anything already counted by the category scanner
+            if any(
+                p == excl or str(p).startswith(str(excl) + "/")
+                for excl in _SPOTLIGHT_EXCLUDE
+            ):
+                continue
+            try:
+                sz = p.stat().st_size
+            except OSError:
+                continue
+            children.append({
+                "name":     p.name,
+                "path":     p_str,
+                "is_dir":   False,
+                "size":     sz,
+                "children": [],
+                "error":    None,
+                "note":     None,
+            })
+            total_size += sz
+
+        # Sort largest first, cap at 200 items to keep the report readable
+        children.sort(key=lambda x: x["size"], reverse=True)
+        children = children[:200]
+
+    except Exception:
+        pass
+
+    count = len(children)
+    desc = (
+        f"Files over 100 MB found by Spotlight outside scanned Library directories — "
+        f"disk images, archives, old backups, large media, and similar. "
+        f"{count} file{'s' if count != 1 else ''} found."
+    )
+
+    return {
+        "id":       "large_files_spotlight",
+        "name":     "Large Files (Spotlight)",
+        "icon":     "🔍",
+        "desc":     desc,
+        "safe":     False,
+        "size":     total_size,
+        "children": children,
+    }
+
+
 def main() -> None:
     print("")
     print("  System Data Analyser")
@@ -1339,6 +1444,13 @@ def main() -> None:
     snap_result = scan_apfs_snapshots()
     results.append(snap_result)
     print(f"      → {fmt_size(snap_result['size'])}", flush=True)
+
+    # Spotlight scan for large files outside already-scanned directories
+    print("  🔍  Scanning for large files via Spotlight …", flush=True)
+    spotlight_result = scan_large_files_spotlight()
+    results.append(spotlight_result)
+    count = len(spotlight_result["children"])
+    print(f"      → {fmt_size(spotlight_result['size'])} ({count} files)", flush=True)
 
     grand_total = sum(max(0, r["size"]) for r in results)
 
