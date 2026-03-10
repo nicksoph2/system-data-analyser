@@ -23,6 +23,17 @@ if sys.platform != "darwin":
     print("System Data Analyser is for macOS only.")
     sys.exit(1)
 
+
+def check_full_disk_access() -> bool:
+    """
+    Test for Full Disk Access by attempting to list a protected directory.
+    /private/var/db/diagnostics is only readable when FDA is granted to Terminal.
+    """
+    try:
+        return len(os.listdir("/private/var/db/diagnostics")) > 0
+    except (PermissionError, OSError):
+        return False
+
 HOME = Path.home()
 
 # ── Category definitions ──────────────────────────────────────────────────────
@@ -211,6 +222,21 @@ CATEGORIES = [
             HOME / "Library/Containers/com.apple.mail/Data/Library/Mail Downloads",
         ],
     },
+    {
+        "id":          "system_databases",
+        "name":        "System Databases & Diagnostics",
+        "icon":        "🗄",
+        "desc":        "System-level databases, crash logs, analytics, and diagnostic data maintained by macOS.",
+        "safe":        False,
+        "skip_level2": False,
+        "paths": [
+            Path("/private/var/db/diagnostics"),
+            Path("/private/var/db/uuidtext"),
+            Path("/private/var/db/analyticsd"),
+            Path("/private/var/db/biome"),
+            Path("/private/var/db/powerlog"),
+        ],
+    },
 ]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -388,12 +414,96 @@ def scan_category(cat: dict) -> dict:
     }
 
 
+# ── APFS snapshot scanner ─────────────────────────────────────────────────────
+
+def _parse_diskutil_snapshot_total() -> int:
+    """Total APFS snapshot space from diskutil apfs list. Returns bytes or -1."""
+    import re
+    try:
+        r = subprocess.run(
+            ["diskutil", "apfs", "list"],
+            capture_output=True, text=True, timeout=15,
+        )
+        for line in r.stdout.splitlines():
+            if "Snapshot Space Used" in line:
+                m = re.search(r"[+\-]?([\d.]+)\s*(B|KB|MB|GB|TB)", line, re.IGNORECASE)
+                if m:
+                    val  = float(m.group(1))
+                    unit = m.group(2).upper()
+                    mul  = {"B": 1, "KB": 1024, "MB": 1024**2,
+                            "GB": 1024**3, "TB": 1024**4}.get(unit, 1)
+                    return int(val * mul)
+    except Exception:
+        pass
+    return -1
+
+
+def scan_apfs_snapshots() -> dict:
+    """
+    List local Time Machine APFS snapshots and report total space used.
+    Snapshots are not regular directories — du cannot see them at all.
+    """
+    snap_names: list[str] = []
+    try:
+        r = subprocess.run(
+            ["tmutil", "listlocalsnapshots", "/"],
+            capture_output=True, text=True, timeout=15,
+        )
+        for line in r.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("com.apple.TimeMachine."):
+                snap_names.append(line)
+    except Exception:
+        pass
+
+    total_size = _parse_diskutil_snapshot_total()
+    per_snap   = (total_size // len(snap_names)) if snap_names and total_size > 0 else -1
+
+    children = []
+    for raw in snap_names:
+        display = raw
+        try:
+            date_part = raw.split("TimeMachine.")[1].replace(".local", "")
+            dt = datetime.strptime(date_part, "%Y-%m-%d-%H%M%S")
+            display = f"Snapshot — {dt.strftime('%d %b %Y at %H:%M')}"
+        except Exception:
+            pass
+
+        note = None if total_size > 0 else \
+            "Individual snapshot sizes not exposed by macOS — grant Full Disk Access for better results"
+
+        children.append({
+            "name":     display,
+            "path":     raw,
+            "is_dir":   False,
+            "size":     per_snap,
+            "children": [],
+            "error":    note,
+        })
+
+    return {
+        "id":       "apfs_snapshots",
+        "name":     "Time Machine Local Snapshots",
+        "icon":     "⏱",
+        "desc":     "Local APFS snapshots created by Time Machine. Invisible to normal disk tools and often account for many GB of 'System Data'.",
+        "safe":     True,
+        "size":     max(total_size, 0),
+        "children": children,
+    }
+
+
 # ── HTML generator ────────────────────────────────────────────────────────────
 
-def generate_html(results: list[dict], grand_total: int, scan_time: str) -> str:
+def generate_html(results: list[dict], grand_total: int, scan_time: str,
+                  fda: bool = False) -> str:
     data_json      = json.dumps(results, ensure_ascii=False)
     total_str      = fmt_size(grand_total)
     total_bytes    = grand_total
+    fda_badge      = (
+        '<span class="fda-badge fda-ok">✓ Full Disk Access</span>'
+        if fda else
+        '<span class="fda-badge fda-warn">⚠ Limited Access</span>'
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -518,6 +628,22 @@ main {{
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}}
+
+.fda-badge {{
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 20px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}}
+.fda-ok {{
+  background: #e8f9ee;
+  color: #1a7f37;
+}}
+.fda-warn {{
+  background: #fff3e0;
+  color: #b45309;
 }}
 
 .safe-badge {{
@@ -754,7 +880,7 @@ footer {{
   <h1>🖥 System Data Analyser</h1>
   <div class="header-meta">
     <div class="header-total" id="grand-total">Total: {total_str}</div>
-    <div>Scanned {scan_time}</div>
+    <div>{fda_badge} &nbsp; Scanned {scan_time}</div>
   </div>
 </header>
 
@@ -1052,6 +1178,22 @@ def main() -> None:
     print("  " + "─" * 38)
     print("")
 
+    # FDA status: launcher passes "granted" or "missing" as argv[1].
+    # If run directly (no arg), check here ourselves.
+    if len(sys.argv) > 1 and sys.argv[1] == "granted":
+        fda = True
+    elif len(sys.argv) > 1 and sys.argv[1] == "missing":
+        fda = False
+    else:
+        fda = check_full_disk_access()
+
+    if fda:
+        print("  ✓ Full Disk Access confirmed")
+    else:
+        print("  ⚠  No Full Disk Access — some directories will show permission errors")
+        print("     System Settings → Privacy & Security → Full Disk Access → enable Terminal")
+    print("")
+
     scan_time = datetime.now().strftime("%d %B %Y at %H:%M")
     results: list[dict] = []
 
@@ -1061,6 +1203,12 @@ def main() -> None:
         results.append(result)
         print(f"      → {fmt_size(result['size'])}", flush=True)
 
+    # APFS snapshots require tmutil/diskutil — handled separately from CATEGORIES
+    print("  ⏱  Scanning Time Machine Local Snapshots …", flush=True)
+    snap_result = scan_apfs_snapshots()
+    results.append(snap_result)
+    print(f"      → {fmt_size(snap_result['size'])}", flush=True)
+
     grand_total = sum(max(0, r["size"]) for r in results)
 
     print("")
@@ -1068,7 +1216,7 @@ def main() -> None:
     print("")
     print("  Generating report …", flush=True)
 
-    html = generate_html(results, grand_total, scan_time)
+    html = generate_html(results, grand_total, scan_time, fda=fda)
 
     # Save to ~/Downloads with a timestamped filename
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

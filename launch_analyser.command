@@ -6,7 +6,8 @@
 cd "$(dirname "$0")"
 
 echo ""
-echo "  System Data Analyser — finding Python…"
+echo "  System Data Analyser"
+echo "  ──────────────────────────────────────────"
 echo ""
 
 # ── Find a working Python 3 ───────────────────────────────────────────────────
@@ -41,7 +42,6 @@ for candidate in "${CANDIDATES[@]}"; do
 
     # Test that this Python actually starts and can print its version
     VERSION=$("$candidate" --version 2>&1) || continue
-    echo "  Found: $candidate  ($VERSION)"
 
     # Confirm it can run a tiny script without crashing
     if "$candidate" -c "import sys; sys.exit(0)" 2>/dev/null; then
@@ -69,18 +69,68 @@ if [ -z "$PYTHON" ]; then
     fi
 fi
 
-echo "  Using: $PYTHON  ($VERSION)"
+echo "  Python: $PYTHON  ($VERSION)"
 echo ""
 
-# ── One-time Full Disk Access reminder ────────────────────────────────────────
-PREF="$HOME/.config/sda_fda_shown"
-if [ ! -f "$PREF" ]; then
-    osascript -e 'display alert "Tip: Full Disk Access" message "For the most complete results, grant Full Disk Access to Terminal.\n\nSystem Settings → Privacy & Security → Full Disk Access\n\nYou only need to do this once. The app works without it, but a few system folders may show limited data." as informational buttons {"OK"}' &>/dev/null
-    mkdir -p "$(dirname "$PREF")" && touch "$PREF"
+# ── Full Disk Access check ────────────────────────────────────────────────────
+# /private/var/db/diagnostics is only readable with Full Disk Access granted
+# to the Terminal. We use it as a reliable proxy to test FDA status.
+
+check_fda() {
+    ls /private/var/db/diagnostics &>/dev/null 2>&1
+}
+
+echo "  Checking Full Disk Access…"
+
+if check_fda; then
+    echo "  ✓ Full Disk Access confirmed — all directories will be scanned"
+    FDA_STATUS="granted"
+else
+    echo "  ⚠  Full Disk Access not detected"
+    FDA_STATUS="missing"
+
+    # Ask the user what they want to do
+    CHOICE=$(osascript <<'APPLESCRIPT'
+button returned of (display alert "Full Disk Access Recommended" message "System Data Analyser works best with Full Disk Access granted to Terminal.
+
+Without it, system directories like diagnostics databases and some caches cannot be read, and the total size reported will be lower than macOS shows.
+
+Would you like to open System Settings to grant access now?" buttons {"Continue Anyway", "Open System Settings"} default button "Open System Settings" as informational)
+APPLESCRIPT
+    )
+
+    if [ "$CHOICE" = "Open System Settings" ]; then
+        # Open directly to the Full Disk Access pane
+        open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+
+        # Prompt the user to grant access and click OK when done
+        osascript <<'APPLESCRIPT'
+display alert "Grant Full Disk Access to Terminal" message "In System Settings:
+
+1. Scroll down to find Terminal in the list
+2. Toggle it ON
+3. You may be asked to quit and reopen Terminal
+4. Once done, click OK to continue" buttons {"OK"} default button "OK"
+APPLESCRIPT
+
+        # Re-check after the user has had a chance to grant access
+        if check_fda; then
+            echo "  ✓ Full Disk Access confirmed — thank you!"
+            FDA_STATUS="granted"
+        else
+            echo "  ⚠  Full Disk Access still not detected — you may need to reopen Terminal after granting access"
+            echo "     The scan will continue but some directories may show permission errors"
+            FDA_STATUS="missing"
+        fi
+    else
+        echo "  Continuing without Full Disk Access — some areas may show permission errors"
+    fi
 fi
 
+echo ""
+
 # ── Run ───────────────────────────────────────────────────────────────────────
-"$PYTHON" system_data_analyser.py
+"$PYTHON" system_data_analyser.py "$FDA_STATUS"
 
 echo ""
 echo "  Done. You can close this window."
