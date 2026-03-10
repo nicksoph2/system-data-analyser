@@ -1,6 +1,6 @@
 # System Data Analyser
 
-A lightweight macOS tool that scans the directories contributing to the **System Data** category in *System Settings → General → Storage* and produces a clean, interactive HTML report — no installs, no dependencies beyond Python 3.
+A lightweight macOS tool that scans the directories contributing to the **System Data** category in _System Settings → General → Storage_ and produces a clean, interactive HTML report — no installs, no dependencies beyond Python 3.
 
 ![macOS](https://img.shields.io/badge/macOS-Sequoia%2015%2B-blue) ![Python](https://img.shields.io/badge/Python-3.8%2B-brightgreen) ![Architecture](https://img.shields.io/badge/Architecture-Apple%20Silicon-orange) ![Licence](https://img.shields.io/badge/Licence-MIT-lightgrey)
 
@@ -8,49 +8,51 @@ A lightweight macOS tool that scans the directories contributing to the **System
 
 ## What it does
 
-macOS bundles a wide range of files into a catch-all *System Data* bucket that gives no insight into what is actually consuming the space. System Data Analyser breaks that bucket open by scanning 15 categories of directories and presenting the results in a clear, drillable report saved to your Downloads folder.
+macOS bundles a wide range of files into a catch-all _System Data_ bucket that gives no insight into what is actually consuming the space. System Data Analyser breaks that bucket open by scanning 15 categories of directories and presenting the results in a clear, drillable report saved to your Downloads folder.
 
-The report opens automatically in your default browser. Categories are shown with their total size and a proportional bar chart. Clicking any row expands it to reveal the subdirectories and files inside, each with its individual size. A **Copy Path** button on hover lets you jump straight to any folder in Finder via *Go → Go to Folder…* (⌘⇧G).
+The report opens automatically in your default browser. Categories are shown with their total size and a proportional bar chart. Clicking any row expands it to reveal the subdirectories and files inside, each with its individual size. A **Copy Path** button on hover lets you jump straight to any folder in Finder via _Go → Go to Folder…_ (⌘⇧G).
 
 ### Categories scanned
 
-| Icon | Category | Description |
-|------|----------|-------------|
-| ⚡ | Application Caches | Temporary files apps create to speed up loading |
-| 📦 | Application Support | Data and resources stored by installed apps |
-| 🗂 | App Containers & Groups | Sandboxed storage areas for apps |
-| 📋 | Log Files | System and application activity logs |
-| ⚙️ | App Preferences | Configuration files for your apps |
-| 🔨 | Xcode Build Data | Intermediate build files and archives |
-| 📱 | iOS & watchOS Simulators | Simulator runtimes for device testing |
-| 🔌 | Device Support Files | Files downloaded when connecting Apple devices to Xcode |
-| 🍺 | Homebrew Packages | Command-line tools installed via Homebrew |
-| 🗑 | Temporary System Files | Short-lived files created during normal use |
-| 🔤 | Fonts | System and user-installed font files |
-| 🔧 | Plug-ins & Extensions | Browser plug-ins, Quick Look extensions, and add-ons |
-| ☁️ | iCloud Drive (Local Copy) | iCloud files currently downloaded to this Mac |
-| 🛠 | Developer Frameworks & SDKs | Additional developer frameworks installed system-wide |
-| 📧 | Mail Downloads | Attachments and previews downloaded by Mail |
+| Icon | Category                    | Description                                             |
+| ---- | --------------------------- | ------------------------------------------------------- |
+| ⚡   | Application Caches          | Temporary files apps create to speed up loading         |
+| 📦   | Application Support         | Data and resources stored by installed apps             |
+| 🗂   | App Containers & Groups     | Sandboxed storage areas for apps                        |
+| 📋   | Log Files                   | System and application activity logs                    |
+| ⚙️   | App Preferences             | Configuration files for your apps                       |
+| 🔨   | Xcode Build Data            | Intermediate build files and archives                   |
+| 📱   | iOS & watchOS Simulators    | Simulator runtimes for device testing                   |
+| 🔌   | Device Support Files        | Files downloaded when connecting Apple devices to Xcode |
+| 🍺   | Homebrew Packages           | Command-line tools installed via Homebrew               |
+| 🗑   | Temporary System Files      | Short-lived files created during normal use             |
+| 🔤   | Fonts                       | System and user-installed font files                    |
+| 🔧   | Plug-ins & Extensions       | Browser plug-ins, Quick Look extensions, and add-ons    |
+| ☁️   | iCloud Drive (Local Copy)   | iCloud files currently downloaded to this Mac           |
+| 🛠   | Developer Frameworks & SDKs | Additional developer frameworks installed system-wide   |
+| 📧   | Mail Downloads              | Attachments and previews downloaded by Mail             |
 
 ### Error visibility
 
-Directories that cannot be read are shown inline in the report — highlighted in amber with a ⚠️ icon and the specific reason (e.g. *Permission denied*). Categories with unreadable items display an `⚠️ N unreadable` badge on their header row. Granting Full Disk Access to Terminal in *System Settings → Privacy & Security → Full Disk Access* resolves most permission errors.
+Directories that cannot be read are shown inline in the report — highlighted in amber with a ⚠️ icon and the specific reason (e.g. _Permission denied_). Categories with unreadable items display an `⚠️ N unreadable` badge on their header row. Granting Full Disk Access to Terminal in _System Settings → Privacy & Security → Full Disk Access_ resolves most permission errors.
 
 ---
 
 ## What it does NOT do
 
-**System Data Analyser is intentionally read-only.** It scans and reports — it does not move, modify, or delete any files. This is a deliberate design decision: safe deletion requires understanding context (some caches are actively in use, some simulator runtimes are still needed), and that judgement should remain with the user. Deletion capability may be added in a future version with appropriate safeguards.
+**System Data Analyser is intentionally read-only.** It scans and reports — it does not move, modify, or delete any files. This is a deliberate design decision: safe deletion requires understanding context (some caches are actively in use, some simulator runtimes are still needed), and that judgement should remain with the user.
+
+Deletion capability may be added by somebody who understands the code and the issues better than me, the author of this sentence.
 
 ---
 
 ## Requirements
 
-| Requirement | Detail |
-|-------------|--------|
-| **macOS** | Sequoia 15 or later |
-| **Architecture** | Apple Silicon (M-series) |
-| **Python** | 3.8 or later — Homebrew Python recommended (`brew install python3`) |
+| Requirement      | Detail                                                              |
+| ---------------- | ------------------------------------------------------------------- |
+| **macOS**        | Sequoia 15 or later                                                 |
+| **Architecture** | Apple Silicon (M-series)                                            |
+| **Python**       | 3.8 or later — Homebrew Python recommended (`brew install python3`) |
 
 > **Important:** The Python.org installer bundles an outdated Tcl/Tk framework that crashes at startup on macOS Sequoia before any code runs. Use Homebrew Python to avoid this. The launcher script (`launch_analyser.command`) detects and prefers Homebrew Python automatically.
 
@@ -58,7 +60,7 @@ Directories that cannot be read are shown inline in the report — highlighted i
 
 Without Full Disk Access, some system-owned directories (e.g. `/private/var/folders`) cannot be read. The tool works without it but shows ⚠️ errors for those locations. To grant access:
 
-*System Settings → Privacy & Security → Full Disk Access → enable Terminal*
+_System Settings → Privacy & Security → Full Disk Access → enable Terminal_
 
 ---
 
@@ -67,7 +69,7 @@ Without Full Disk Access, some system-owned directories (e.g. `/private/var/fold
 No installation is required. Clone the repository and run the launcher:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/system-data-analyser.git
+git clone https://github.com/nicksoph2/system-data-analyser.git
 cd system-data-analyser
 ```
 
@@ -87,7 +89,7 @@ chmod +x launch_analyser.command
 
 ### macOS Gatekeeper
 
-macOS quarantines files downloaded from the internet, including files cloned from GitHub. The first time you run the launcher you may see *"cannot be opened because it is from an unidentified developer"*. To clear the quarantine flag:
+macOS quarantines files downloaded from the internet, including files cloned from GitHub. The first time you run the launcher you may see _"cannot be opened because it is from an unidentified developer"_. To clear the quarantine flag:
 
 ```bash
 xattr -d com.apple.quarantine launch_analyser.command
@@ -150,7 +152,8 @@ This tool was developed collaboratively with [Claude](https://claude.ai) (Anthro
 - **Iterative debugging**: Several compatibility issues were diagnosed and fixed in session, including Python type hint syntax for older Python versions, Tcl/Tk framework crashes on macOS Sequoia caused by the Python.org installer, and macOS stub behaviour at `/usr/bin/python3`
 - **Feature additions**: Error reporting, timestamped output to Downloads, and the interactive HTML report format were all developed through natural language conversation with Claude
 
-The entire codebase — Python scanner, bash launcher, and HTML/CSS/JS report generator — was written by Claude based on requirements specified in conversation.
+The entire codebase — Python scanner, bash launcher, HTML/CSS/JS report generator, and readme — was written by Claude based on requirements specified in conversation.
+(Not entirely true. I did write a sentence in the readme and ths makes 3.)
 
 ---
 
