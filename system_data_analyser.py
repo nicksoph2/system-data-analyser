@@ -1369,7 +1369,14 @@ def scan_large_files_spotlight(min_bytes: int = 100 * 1024 * 1024) -> dict:
             ):
                 continue
             try:
-                sz = p.stat().st_size
+                st = p.stat()
+                # st_blocks is the number of 512-byte blocks actually allocated on
+                # disk.  iCloud files that are stored only in the cloud (not
+                # downloaded) show a non-zero st_size reported by Spotlight but
+                # have st_blocks == 0 — no local storage used at all.  Skip them.
+                if st.st_blocks == 0:
+                    continue
+                sz = st.st_size
             except OSError:
                 continue
             children.append({
