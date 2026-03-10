@@ -416,9 +416,88 @@ def scan_category(cat: dict) -> dict:
 
 # ── APFS snapshot scanner ─────────────────────────────────────────────────────
 
-def _parse_diskutil_snapshot_total() -> int:
-    """Total APFS snapshot space from diskutil apfs list. Returns bytes or -1."""
+def _parse_diskutil_size(text: str) -> int:
+    """
+    Parse a size string from diskutil output → bytes.
+    Handles comma-separated raw bytes  e.g. '+26,843,545,600 B (26.8 GB)'
+    and human-readable fallback         e.g. '26.8 GB'.
+    Returns -1 if nothing matched.
+    """
     import re
+    # Prefer raw byte count (comma-formatted integer followed by lone 'B')
+    m = re.search(r"[+\-]?([\d,]+)\s+B\b", text)
+    if m:
+        return int(m.group(1).replace(",", ""))
+    # Fall back to human-readable unit
+    m = re.search(r"[+\-]?([\d.]+)\s*(KB|MB|GB|TB)", text, re.IGNORECASE)
+    if m:
+        val  = float(m.group(1))
+        unit = m.group(2).upper()
+        mul  = {"KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+        return int(val * mul.get(unit, 1))
+    return -1
+
+
+def _get_root_apfs_device() -> str:
+    """
+    Return the device identifier for the root APFS volume (e.g. 'disk3s1').
+    Uses 'diskutil info /' which works even when the mount path is synthetic.
+    """
+    try:
+        r = subprocess.run(
+            ["diskutil", "info", "/"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in r.stdout.splitlines():
+            if "Device Identifier:" in line:
+                return line.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    # Fallback: df /
+    try:
+        r = subprocess.run(["df", "/"], capture_output=True, text=True, timeout=5)
+        lines = r.stdout.strip().splitlines()
+        if len(lines) >= 2:
+            return lines[1].split()[0].replace("/dev/", "")
+    except Exception:
+        pass
+    return ""
+
+
+def _get_per_snapshot_sizes(device: str) -> dict[str, int]:
+    """
+    Use 'diskutil apfs listSnapshots <device>' to get individual snapshot sizes.
+    Returns {snapshot_name: bytes} for every snapshot that reports a size.
+    """
+    import re
+    sizes: dict[str, int] = {}
+    if not device:
+        return sizes
+    try:
+        r = subprocess.run(
+            ["diskutil", "apfs", "listSnapshots", device],
+            capture_output=True, text=True, timeout=15,
+        )
+        current: str | None = None
+        for line in r.stdout.splitlines():
+            name_m = re.search(r"(com\.apple\.TimeMachine\.[^\s]+)", line)
+            if name_m:
+                current = name_m.group(1)
+            elif current and "Snapshot Size:" in line:
+                sz = _parse_diskutil_size(line)
+                if sz > 0:
+                    sizes[current] = sz
+                current = None
+    except Exception:
+        pass
+    return sizes
+
+
+def _get_snapshot_total_from_apfs_list() -> int:
+    """
+    Fall-back: parse 'Snapshot Space Used' from 'diskutil apfs list'.
+    Returns bytes or -1.
+    """
     try:
         r = subprocess.run(
             ["diskutil", "apfs", "list"],
@@ -426,13 +505,9 @@ def _parse_diskutil_snapshot_total() -> int:
         )
         for line in r.stdout.splitlines():
             if "Snapshot Space Used" in line:
-                m = re.search(r"[+\-]?([\d.]+)\s*(B|KB|MB|GB|TB)", line, re.IGNORECASE)
-                if m:
-                    val  = float(m.group(1))
-                    unit = m.group(2).upper()
-                    mul  = {"B": 1, "KB": 1024, "MB": 1024**2,
-                            "GB": 1024**3, "TB": 1024**4}.get(unit, 1)
-                    return int(val * mul)
+                sz = _parse_diskutil_size(line)
+                if sz >= 0:
+                    return sz
     except Exception:
         pass
     return -1
@@ -440,9 +515,14 @@ def _parse_diskutil_snapshot_total() -> int:
 
 def scan_apfs_snapshots() -> dict:
     """
-    List local Time Machine APFS snapshots and report total space used.
-    Snapshots are not regular directories — du cannot see them at all.
+    List local Time Machine APFS snapshots and report space used.
+    Snapshots are invisible to du/find — their sizes come from diskutil.
+    Strategy:
+      1. List names via tmutil listlocalsnapshots
+      2. Get per-snapshot sizes via diskutil apfs listSnapshots <device>  ← most accurate
+      3. Fall back to total from diskutil apfs list, divided evenly       ← approximate
     """
+    # 1. Collect snapshot names
     snap_names: list[str] = []
     try:
         r = subprocess.run(
@@ -456,9 +536,24 @@ def scan_apfs_snapshots() -> dict:
     except Exception:
         pass
 
-    total_size = _parse_diskutil_snapshot_total()
-    per_snap   = (total_size // len(snap_names)) if snap_names and total_size > 0 else -1
+    # 2. Per-snapshot sizes
+    device    = _get_root_apfs_device()
+    snap_sizes = _get_per_snapshot_sizes(device)
 
+    # 3. Fall-back total
+    fallback_total = -1
+    if not snap_sizes:
+        fallback_total = _get_snapshot_total_from_apfs_list()
+
+    # Compute overall total
+    if snap_sizes:
+        total_size = sum(snap_sizes.values())
+    elif fallback_total > 0:
+        total_size = fallback_total
+    else:
+        total_size = 0
+
+    # 4. Build children
     children = []
     for raw in snap_names:
         display = raw
@@ -469,14 +564,21 @@ def scan_apfs_snapshots() -> dict:
         except Exception:
             pass
 
-        note = None if total_size > 0 else \
-            "Individual snapshot sizes not exposed by macOS — grant Full Disk Access for better results"
+        if raw in snap_sizes:
+            snap_size = snap_sizes[raw]
+            note = None
+        elif fallback_total > 0 and snap_names:
+            snap_size = fallback_total // len(snap_names)
+            note = "Approximate — total divided evenly across snapshots"
+        else:
+            snap_size = -1
+            note = "Size unavailable — run via Terminal with Full Disk Access for better results"
 
         children.append({
             "name":     display,
             "path":     raw,
             "is_dir":   False,
-            "size":     per_snap,
+            "size":     snap_size,
             "children": [],
             "error":    note,
         })
@@ -487,7 +589,7 @@ def scan_apfs_snapshots() -> dict:
         "icon":     "⏱",
         "desc":     "Local APFS snapshots created by Time Machine. Invisible to normal disk tools and often account for many GB of 'System Data'.",
         "safe":     True,
-        "size":     max(total_size, 0),
+        "size":     total_size,
         "children": children,
     }
 
