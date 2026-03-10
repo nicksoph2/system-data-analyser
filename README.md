@@ -38,6 +38,86 @@ Directories that cannot be read are shown inline in the report — highlighted i
 
 ---
 
+## Why the total may differ from macOS Storage
+
+If you compare this tool's grand total with the **System Data** figure in _System Settings → General → Storage_, you will almost certainly see a gap — often anywhere from a few GB to 30 GB or more. This is expected and has two main causes.
+
+### 1 · APFS local Time Machine snapshots
+
+When Time Machine is active, macOS keeps rolling local snapshots of your Data volume directly on the internal drive. These are stored as **APFS snapshot metadata** — they are completely invisible to standard file-system tools like `du`, `find`, and `ls`. Apple's Storage panel reads their sizes via a private APFS framework that is not accessible to third-party tools.
+
+System Data Analyser detects these snapshots and lists them by date, but cannot report their individual sizes. On a Mac with a few recent snapshots, this alone can account for 15–30 GB of unexplained space.
+
+**What you can do manually:**
+
+```bash
+# List your local snapshots with their names and dates
+tmutil listlocalsnapshots /
+
+# See full details (UUID, XID, purgeable flag) for each snapshot on the Data volume
+diskutil apfs listSnapshots disk3s1
+# Replace disk3s1 with your Data volume if different —
+# run: diskutil info /System/Volumes/Data | grep "Device Identifier"
+
+# Check how much total space the APFS container has allocated vs free
+diskutil apfs list | grep -E "Capacity|Size"
+```
+
+Snapshots are automatically purged by macOS when disk space runs low. To reclaim the space immediately without deleting them yourself, you can use Disk Utility's First Aid, or delete them explicitly (this is safe — Time Machine will create new ones at the next backup):
+
+```bash
+# Delete ALL local snapshots — macOS will recreate them at the next backup
+sudo tmutil deletelocalsnapshots /
+
+# Or delete a single named snapshot
+sudo tmutil deletelocalsnapshot com.apple.TimeMachine.YYYY-MM-DD-HHMMSS.local
+```
+
+### 2 · System-protected databases (`/private/var/db/`)
+
+macOS stores a significant amount of diagnostic and analytics data in `/private/var/db/`. These directories — including `diagnostics`, `uuidtext`, `analyticsd`, `biome`, and `powerlog` — are **only readable with Full Disk Access granted to Terminal**. Without it, they are silently skipped or show a permission error.
+
+System Data Analyser includes a "System Databases" category that scans these paths when Full Disk Access is available (typically 2–5 GB combined). Without FDA they appear as errors or are omitted entirely.
+
+**What you can do manually:**
+
+```bash
+# Check sizes of the main system database directories
+sudo du -sh /private/var/db/diagnostics
+sudo du -sh /private/var/db/uuidtext
+sudo du -sh /private/var/db/analyticsd
+sudo du -sh /private/var/db/biome
+sudo du -sh /private/var/db/powerlog
+```
+
+### 3 · Other areas that may contribute
+
+A smaller number of other factors can contribute to the gap:
+
+- **Spotlight indexes** — stored at `/.Spotlight-V100`, readable only with `sudo`:
+
+  ```bash
+  sudo du -sh /.Spotlight-V100
+  ```
+
+- **APFS volume overhead** — the file system allocates space in fixed-size chunks; the difference between logical file size and allocated blocks isn't visible to `du`.
+
+- **`/private/var/folders/`** — per-user temporary caches for sandboxed apps. Requires Full Disk Access to read fully. Grant FDA to Terminal (see Requirements) and re-run the tool for complete coverage.
+
+- **Virtual memory swap** — located at `/private/var/vm/`, already included in the _Temporary System Files_ category if Full Disk Access is granted.
+
+### In summary
+
+| Source                   | Typically | Visible to this tool?      | Workaround                         |
+| ------------------------ | --------- | -------------------------- | ---------------------------------- |
+| APFS local TM snapshots  | 5–30 GB   | Listed, not sized          | `tmutil`/`diskutil` commands above |
+| System databases         | 2–5 GB    | Yes, with Full Disk Access | Grant FDA to Terminal              |
+| Spotlight index          | 0.5–3 GB  | No (needs sudo)            | `sudo du -sh /.Spotlight-V100`     |
+| APFS allocation overhead | 0.5–2 GB  | No                         | Informational only                 |
+| Sandboxed temp caches    | 1–5 GB    | Partially, with FDA        | Grant FDA to Terminal              |
+
+---
+
 ## What it does NOT do
 
 **System Data Analyser is intentionally read-only.** It scans and reports — it does not move, modify, or delete any files. This is a deliberate design decision: safe deletion requires understanding context (some caches are actively in use, some simulator runtimes are still needed), and that judgement should remain with the user.
@@ -153,7 +233,7 @@ This tool was developed collaboratively with [Claude](https://claude.ai) (Anthro
 - **Feature additions**: Error reporting, timestamped output to Downloads, and the interactive HTML report format were all developed through natural language conversation with Claude
 
 The entire codebase — Python scanner, bash launcher, HTML/CSS/JS report generator, and readme — was written by Claude based on requirements specified in conversation.
-(Not entirely true. I did write a sentence in the readme and ths makes 3.)
+(Not entirely true. I did write a sentence in the readme and now this makes 3 sentences what I wrote.)
 
 ---
 

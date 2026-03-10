@@ -440,27 +440,26 @@ def _parse_diskutil_size(text: str) -> int:
 
 def _get_root_apfs_device() -> str:
     """
-    Return the device identifier for the root APFS volume (e.g. 'disk3s1').
-    Uses 'diskutil info /' which works even when the mount path is synthetic.
+    Return the device identifier for the APFS Data volume (e.g. 'disk3s1').
+    On macOS Catalina+, Time Machine snapshots live on /System/Volumes/Data,
+    NOT on the sealed System Volume that '/' resolves to.
+    Falls back to '/' if the Data volume mount isn't present.
     """
-    try:
-        r = subprocess.run(
-            ["diskutil", "info", "/"],
-            capture_output=True, text=True, timeout=10,
-        )
-        for line in r.stdout.splitlines():
-            if "Device Identifier:" in line:
-                return line.split(":", 1)[1].strip()
-    except Exception:
-        pass
-    # Fallback: df /
-    try:
-        r = subprocess.run(["df", "/"], capture_output=True, text=True, timeout=5)
-        lines = r.stdout.strip().splitlines()
-        if len(lines) >= 2:
-            return lines[1].split()[0].replace("/dev/", "")
-    except Exception:
-        pass
+    for mount in ("/System/Volumes/Data", "/"):
+        try:
+            r = subprocess.run(
+                ["diskutil", "info", mount],
+                capture_output=True, text=True, timeout=10,
+            )
+            for line in r.stdout.splitlines():
+                if "Device Identifier:" in line:
+                    dev = line.split(":", 1)[1].strip()
+                    # Prefer the plain volume (e.g. disk3s1) over a snapshot
+                    # device (e.g. disk3s3s1) — snapshots have an extra segment
+                    if dev.count("s") <= 2 or mount == "/":
+                        return dev
+        except Exception:
+            pass
     return ""
 
 
@@ -546,12 +545,15 @@ def scan_apfs_snapshots() -> dict:
         fallback_total = _get_snapshot_total_from_apfs_list()
 
     # Compute overall total
+    sizes_known = False
     if snap_sizes:
         total_size = sum(snap_sizes.values())
+        sizes_known = True
     elif fallback_total > 0:
         total_size = fallback_total
+        sizes_known = True
     else:
-        total_size = 0
+        total_size = -1   # genuinely unknown — render as '—', not '0 B'
 
     # 4. Build children
     children = []
@@ -566,13 +568,13 @@ def scan_apfs_snapshots() -> dict:
 
         if raw in snap_sizes:
             snap_size = snap_sizes[raw]
-            note = None
+            item_note = None
         elif fallback_total > 0 and snap_names:
             snap_size = fallback_total // len(snap_names)
-            note = "Approximate — total divided evenly across snapshots"
+            item_note = "approx."
         else:
             snap_size = -1
-            note = "Size unavailable — run via Terminal with Full Disk Access for better results"
+            item_note = None   # size shows as '—'; no warning needed
 
         children.append({
             "name":     display,
@@ -580,14 +582,26 @@ def scan_apfs_snapshots() -> dict:
             "is_dir":   False,
             "size":     snap_size,
             "children": [],
-            "error":    note,
+            "error":    None,        # never treat unavailable size as an error
+            "note":     item_note,
         })
+
+    sizes_note = (
+        ""
+        if sizes_known
+        else " Individual sizes are not exposed by macOS public APIs on this version — "
+             "the total shown in System Settings Storage comes from a private framework."
+    )
 
     return {
         "id":       "apfs_snapshots",
         "name":     "Time Machine Local Snapshots",
         "icon":     "⏱",
-        "desc":     "Local APFS snapshots created by Time Machine. Invisible to normal disk tools and often account for many GB of 'System Data'.",
+        "desc":     (
+            "Local APFS snapshots created by Time Machine. "
+            "Invisible to normal disk tools (du/find) and often account for many GB of 'System Data'."
+            + sizes_note
+        ),
         "safe":     True,
         "size":     total_size,
         "children": children,
@@ -956,6 +970,13 @@ main {{
   flex: 1;
   min-width: 0;
 }}
+.item-note {{
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+  margin-left: 6px;
+  flex-shrink: 0;
+}}
 .error-badge {{
   font-size: 11px;
   font-weight: 500;
@@ -1119,6 +1140,14 @@ function makeItemRow(item, depth) {{
     sz.className = 'item-size sz-' + sc;
     sz.textContent = fmtSize(item.size);
     row.appendChild(sz);
+
+    // Optional note (e.g. "approx.") — shown in muted italic after size
+    if (item.note) {{
+      const noteEl = document.createElement('span');
+      noteEl.className = 'item-note';
+      noteEl.textContent = item.note;
+      row.appendChild(noteEl);
+    }}
 
     // Path (truncated)
     const pathSpan = document.createElement('span');
